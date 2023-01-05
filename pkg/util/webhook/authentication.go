@@ -29,13 +29,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/apiserver/pkg/features"
 	egressselector "k8s.io/apiserver/pkg/server/egressselector"
-	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	tracing "k8s.io/component-base/tracing"
 )
 
 // AuthenticationInfoResolverWrapper can be used to inject Dial function to the
@@ -47,8 +44,8 @@ func NewDefaultAuthenticationInfoResolverWrapper(
 	proxyTransport *http.Transport,
 	egressSelector *egressselector.EgressSelector,
 	kubeapiserverClientConfig *rest.Config,
-	tp trace.TracerProvider) AuthenticationInfoResolverWrapper {
-
+	tp trace.TracerProvider,
+) AuthenticationInfoResolverWrapper {
 	webhookAuthResolverWrapper := func(delegate AuthenticationInfoResolver) AuthenticationInfoResolver {
 		return &AuthenticationInfoResolverDelegator{
 			ClientConfigForFunc: func(hostPort string) (*rest.Config, error) {
@@ -58,9 +55,6 @@ func NewDefaultAuthenticationInfoResolverWrapper(
 				ret, err := delegate.ClientConfigFor(hostPort)
 				if err != nil {
 					return nil, err
-				}
-				if feature.DefaultFeatureGate.Enabled(features.APIServerTracing) {
-					ret.Wrap(tracing.WrapperFor(tp))
 				}
 
 				if egressSelector != nil {
@@ -83,9 +77,6 @@ func NewDefaultAuthenticationInfoResolverWrapper(
 				ret, err := delegate.ClientConfigForService(serviceName, serviceNamespace, servicePort)
 				if err != nil {
 					return nil, err
-				}
-				if feature.DefaultFeatureGate.Enabled(features.APIServerTracing) {
-					ret.Wrap(tracing.WrapperFor(tp))
 				}
 
 				if egressSelector != nil {

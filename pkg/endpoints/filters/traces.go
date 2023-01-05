@@ -19,20 +19,10 @@ package filters
 import (
 	"net/http"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
-
-	tracing "k8s.io/component-base/tracing"
 )
 
 // WithTracing adds tracing to requests if the incoming request is sampled
 func WithTracing(handler http.Handler, tp trace.TracerProvider) http.Handler {
-	opts := []otelhttp.Option{
-		otelhttp.WithPropagators(tracing.Propagators()),
-		otelhttp.WithPublicEndpoint(),
-		otelhttp.WithTracerProvider(tp),
-	}
-	// With Noop TracerProvider, the otelhttp still handles context propagation.
-	// See https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough
-	return otelhttp.NewHandler(handler, "KubernetesAPI", opts...)
+	return handler
 }

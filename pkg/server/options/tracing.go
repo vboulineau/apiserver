@@ -17,27 +17,15 @@ limitations under the License.
 package options
 
 import (
-	"context"
 	"fmt"
-	"io/ioutil"
-	"net"
 
 	"github.com/spf13/pflag"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpgrpc"
-	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/semconv"
-	"google.golang.org/grpc"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apiserver/pkg/apis/apiserver"
 	"k8s.io/apiserver/pkg/apis/apiserver/install"
-	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/egressselector"
-	"k8s.io/apiserver/pkg/util/feature"
-	tracing "k8s.io/component-base/tracing"
-	tracingapi "k8s.io/component-base/tracing/api/v1"
 	"k8s.io/utils/path"
 )
 
@@ -76,52 +64,6 @@ func (o *TracingOptions) AddFlags(fs *pflag.FlagSet) {
 
 // ApplyTo fills up Tracing config with options.
 func (o *TracingOptions) ApplyTo(es *egressselector.EgressSelector, c *server.Config) error {
-	if o == nil || o.ConfigFile == "" {
-		return nil
-	}
-	if !feature.DefaultFeatureGate.Enabled(features.APIServerTracing) {
-		return fmt.Errorf("APIServerTracing feature is not enabled, but tracing config file was provided")
-	}
-
-	traceConfig, err := ReadTracingConfiguration(o.ConfigFile)
-	if err != nil {
-		return fmt.Errorf("failed to read tracing config: %v", err)
-	}
-
-	errs := tracingapi.ValidateTracingConfiguration(traceConfig, feature.DefaultFeatureGate, nil)
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to validate tracing configuration: %v", errs.ToAggregate())
-	}
-
-	opts := []otlpgrpc.Option{}
-	if es != nil {
-		// Only use the egressselector dialer if egressselector is enabled.
-		// Endpoint is on the "ControlPlane" network
-		egressDialer, err := es.Lookup(egressselector.ControlPlane.AsNetworkContext())
-		if err != nil {
-			return err
-		}
-
-		otelDialer := func(ctx context.Context, addr string) (net.Conn, error) {
-			return egressDialer(ctx, "tcp", addr)
-		}
-		opts = append(opts, otlpgrpc.WithDialOption(grpc.WithContextDialer(otelDialer)))
-	}
-
-	resourceOpts := []resource.Option{
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(apiserverService),
-			semconv.ServiceInstanceIDKey.String(c.APIServerID),
-		),
-	}
-	tp, err := tracing.NewProvider(context.Background(), traceConfig, opts, resourceOpts)
-	if err != nil {
-		return err
-	}
-	c.TracerProvider = tp
-	if c.LoopbackClientConfig != nil {
-		c.LoopbackClientConfig.Wrap(tracing.WrapperFor(c.TracerProvider))
-	}
 	return nil
 }
 
@@ -137,25 +79,4 @@ func (o *TracingOptions) Validate() (errs []error) {
 		errs = append(errs, fmt.Errorf("error checking if tracing-config-file %s exists: %v", o.ConfigFile, err))
 	}
 	return
-}
-
-// ReadTracingConfiguration reads the tracing configuration from a file
-func ReadTracingConfiguration(configFilePath string) (*tracingapi.TracingConfiguration, error) {
-	if configFilePath == "" {
-		return nil, fmt.Errorf("tracing config file was empty")
-	}
-	data, err := ioutil.ReadFile(configFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read tracing configuration from %q: %v", configFilePath, err)
-	}
-	internalConfig := &apiserver.TracingConfiguration{}
-	// this handles json/yaml/whatever, and decodes all registered version to the internal version
-	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, internalConfig); err != nil {
-		return nil, fmt.Errorf("unable to decode tracing configuration data: %v", err)
-	}
-	tc := &tracingapi.TracingConfiguration{
-		Endpoint:               internalConfig.Endpoint,
-		SamplingRatePerMillion: internalConfig.SamplingRatePerMillion,
-	}
-	return tc, nil
 }

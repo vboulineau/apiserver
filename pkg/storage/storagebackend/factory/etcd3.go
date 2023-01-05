@@ -32,7 +32,6 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
@@ -41,16 +40,13 @@ import (
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	genericfeatures "k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/server/egressselector"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/etcd3"
 	"k8s.io/apiserver/pkg/storage/etcd3/metrics"
 	"k8s.io/apiserver/pkg/storage/storagebackend"
 	"k8s.io/apiserver/pkg/storage/value"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/component-base/metrics/legacyregistry"
-	tracing "k8s.io/component-base/tracing"
 	"k8s.io/klog/v2"
 )
 
@@ -223,17 +219,6 @@ var newETCD3Client = func(c storagebackend.TransportConfig) (*clientv3.Client, e
 		// which seems to be what we want as the metrics will be collected on each attempt (retry)
 		grpc.WithChainUnaryInterceptor(grpcprom.UnaryClientInterceptor),
 		grpc.WithChainStreamInterceptor(grpcprom.StreamClientInterceptor),
-	}
-	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServerTracing) {
-		tracingOpts := []otelgrpc.Option{
-			otelgrpc.WithPropagators(tracing.Propagators()),
-			otelgrpc.WithTracerProvider(c.TracerProvider),
-		}
-		// Even with Noop  TracerProvider, the otelgrpc still handles context propagation.
-		// See https://github.com/open-telemetry/opentelemetry-go/tree/main/example/passthrough
-		dialOptions = append(dialOptions,
-			grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor(tracingOpts...)),
-			grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor(tracingOpts...)))
 	}
 	if egressDialer != nil {
 		dialer := func(ctx context.Context, addr string) (net.Conn, error) {
